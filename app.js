@@ -3,7 +3,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const ejs = require("ejs");
 const mongoose = require("mongoose");
-const encrypt = require("mongoose-encryption");
+const md5 = require("md5");
 
 const app = express();
 
@@ -17,9 +17,6 @@ const userSchema = new mongoose.Schema({
   login: String,
   password: String
 });
-
-const secret = process.env.SECRET;
-userSchema.plugin(encrypt, {secret: secret, encryptedFields: ["password"]});
 
 const User = new mongoose.model("User", userSchema);
 
@@ -35,18 +32,27 @@ app.get("/register", function(req, res){
   res.render("register");
 });
 
+app.get("/secrets", function(req, res){
+  res.render("secrets");
+});
+
+app.get("/logout", function(req, res){
+  res.render("home");
+});
+
 app.post("/register", function(req, res){
   const newUser = new User({
     login: req.body.username,
-    password: req.body.password
+    password: md5(req.body.password)
   });
   newUser.save();
-  res.render("secrets");
+  console.log("Added user to database.");
+  res.redirect("/secrets");
 });
 
 app.post("/login", function(req,res){
   const enteredLogin = req.body.username;
-  const enteredPassword = req.body.password;
+  const enteredPassword = md5(req.body.password);
   async function findDocument(){
     let result = await User.findOne({login: enteredLogin});
     if (result){
