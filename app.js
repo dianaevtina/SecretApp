@@ -3,7 +3,9 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const ejs = require("ejs");
 const mongoose = require("mongoose");
-const md5 = require("md5");
+const bcrypt = require("bcrypt");
+
+const saltRounds = 10;
 
 const app = express();
 
@@ -36,32 +38,36 @@ app.get("/secrets", function(req, res){
   res.render("secrets");
 });
 
-app.get("/logout", function(req, res){
-  res.render("home");
+app.get("/submit", function(req, res){
+  res.render("submit");
 });
 
 app.post("/register", function(req, res){
-  const newUser = new User({
-    login: req.body.username,
-    password: md5(req.body.password)
+  bcrypt.hash(req.body.password, saltRounds, function(err, hash) {
+    const newUser = new User({
+      login: req.body.username,
+      password: hash
+    });
+    newUser.save();
+    res.redirect("/secrets");
   });
-  newUser.save();
-  console.log("Added user to database.");
-  res.redirect("/secrets");
 });
 
 app.post("/login", function(req,res){
   const enteredLogin = req.body.username;
-  const enteredPassword = md5(req.body.password);
+  const enteredPassword = req.body.password;
+
   async function findDocument(){
-    let result = await User.findOne({login: enteredLogin});
-    if (result){
-      if(result.password === enteredPassword){
-        res.render("secrets");
-      }
-      else{
-        res.render("login", {alertMessage: "Incorrect password.", vis: "visible"});
-      }
+    let foundUser = await User.findOne({login: enteredLogin});
+    if (foundUser){
+      bcrypt.compare(enteredPassword, foundUser.password, function(err, result) {
+        if (result === true){
+          res.redirect("/secrets");
+        }
+        else{
+          res.render("login", {alertMessage: "Incorrect password.", vis: "visible"});
+        }
+      });
     }
     else{
       res.render("login", {alertMessage: "Incorrect user.", vis: "visible"});
