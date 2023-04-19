@@ -3,15 +3,25 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const ejs = require("ejs");
 const mongoose = require("mongoose");
-const bcrypt = require("bcrypt");
-
-const saltRounds = 10;
+const session = require("express-session");
+const passport = require("passport");
+const passportLocalMongoose = require("passport-local-mongoose");
+require('dotenv').config();
 
 const app = express();
 
 app.use(express.static("public"));
 app.set('view engine','ejs');
 app.use(bodyParser.urlencoded({extended: true}));
+
+app.use(session({
+  secret: process.env.SECRET,
+  resave: false,
+  saveUninitialized: true,
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
 
 mongoose.connect("mongodb://127.0.0.1:27017/userDB");
 
@@ -20,7 +30,13 @@ const userSchema = new mongoose.Schema({
   password: String
 });
 
+userSchema.plugin(passportLocalMongoose);
+
 const User = new mongoose.model("User", userSchema);
+
+passport.use(User.createStrategy());
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
 
 app.get("/", function(req, res){
   res.render("home");
@@ -35,45 +51,66 @@ app.get("/register", function(req, res){
 });
 
 app.get("/secrets", function(req, res){
-  res.render("secrets");
+  if(req.isAuthenticated()){
+    res.render("secrets");
+  } else{
+    res.redirect("/login");
+  }
 });
 
 app.get("/submit", function(req, res){
   res.render("submit");
 });
 
-app.post("/register", function(req, res){
-  bcrypt.hash(req.body.password, saltRounds, function(err, hash) {
-    const newUser = new User({
-      login: req.body.username,
-      password: hash
-    });
-    newUser.save();
-    res.redirect("/secrets");
+app.get("/logout", function(req,res){
+  req.logout(function(err) {
+    if (!err) {
+    res.redirect("/");
+  }
   });
 });
 
-app.post("/login", function(req,res){
-  const enteredLogin = req.body.username;
-  const enteredPassword = req.body.password;
-
-  async function findDocument(){
-    let foundUser = await User.findOne({login: enteredLogin});
-    if (foundUser){
-      bcrypt.compare(enteredPassword, foundUser.password, function(err, result) {
-        if (result === true){
-          res.redirect("/secrets");
-        }
-        else{
-          res.render("login", {alertMessage: "Incorrect password.", vis: "visible"});
-        }
-      });
+app.post("/register", function(req, res){
+  User.register({username: req.body.username}, req.body.password, function(err, user) {
+  if (err) {
+    if (err.message === "A user with the given username is already registered"){
+      res.render("login", {alertMessage: err.message, vis: "visible"});
     }
     else{
-      res.render("login", {alertMessage: "Incorrect user.", vis: "visible"});
+      console.log(err);
+      res.redirect("/register");
     }
+  } else{
+      passport.authenticate('local')(req, res, function() {
+      res.redirect('/secrets');
+    });
   }
-  findDocument();
+});
+});
+
+app.post("/login", function(req,res){
+  const user = new User({
+    login: req.body.username,
+    password: req.body.password
+  });
+  req.login(user, { session: false }, function(err) {
+    if (err) {
+      if(!user.login){
+        res.render("login", {alertMessage: "The user with the entered name does not exist.", vis: "visible"});
+      }
+      else if(!user.password){
+        res.render("login", {alertMessage: "Wrong password.", vis: "visible"});
+      }
+
+      console.log(err);
+      res.render("login", {alertMessage: "Authentication error.", vis: "visible"});
+    }
+    else{
+        passport.authenticate('local')(req, res, function() {
+        res.redirect('/secrets');
+      });
+    }
+  });
 });
 
 app.listen(3000, function(){
